@@ -1,0 +1,33 @@
+﻿<Window x:Class="WpfApp1.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:WpfApp1"
+        mc:Ignorable="d"
+        Title="MainWindow" Height="110" Width="250">
+    <Grid>
+        <!-- CheckBox -->
+        <CheckBox x:Name="MyCheckBox" 
+                  Content="红药冲屏障" 
+                  HorizontalAlignment="Left" 
+                  Height="18" 
+                  Margin="24,32,0,0" 
+                  VerticalAlignment="Top" 
+                  Width="83" 
+                  Checked="ShielCheckBox_Checked" 
+                  Unchecked="ShielCheckBox_Unchecked"/>
+        <Slider Name="ShielLevel" HorizontalAlignment="Left" Margin="112,32,0,0" VerticalAlignment="Top" Width="100" Height="18"  Minimum="0" Maximum="9" Value="6" />
+        <CheckBox x:Name="MyCheckBox复制__C_" 
+            Content="祈愿-电球" 
+            HorizontalAlignment="Left" 
+            Height="18" 
+            Margin="24,67,0,0" 
+            VerticalAlignment="Top" 
+            Width="83" 
+            Checked="qiyuanCheckBox_Checked" 
+            Unchecked="qiyuanCheckBox_Unchecked"/>
+        <TextBox  Name="skillloopsDelay" HorizontalAlignment="Left" Margin="115,67,0,0" TextWrapping="Wrap" Text="600" VerticalAlignment="Top" Width="94"/>
+
+    </Grid>
+</Window>
