@@ -17,7 +17,6 @@
                   Width="83" 
                   Checked="ShielCheckBox_Checked" 
                   Unchecked="ShielCheckBox_Unchecked"/>
-        <Slider Name="ShielLevel" HorizontalAlignment="Left" Margin="112,32,0,0" VerticalAlignment="Top" Width="100" Height="18"  Minimum="0" Maximum="9" Value="6" />
         <CheckBox x:Name="qiyuan_box" 
             Content="祈愿-电球" 
             HorizontalAlignment="Left" 
@@ -28,15 +27,6 @@
             Checked="qiyuanCheckBox_Checked" 
             Unchecked="qiyuanCheckBox_Unchecked"/>
         <Slider x:Name="qiyuan_level" HorizontalAlignment="Left" Margin="112,67,0,0" VerticalAlignment="Top" Width="100" Height="18"  Minimum="0" Maximum="9" Value="7" />
-        <CheckBox x:Name="autoPickup" 
-            Content="自动捡装备" 
-            HorizontalAlignment="Left" 
-            Height="18" 
-            Margin="24,97,0,0" 
-            VerticalAlignment="Top" 
-            Width="83" 
-            Checked="autoPickup_Checked" 
-            Unchecked="autoPickup_Unchecked"/>
 
     </Grid>
 </Window>
