@@ -1,0 +1,16 @@
+<Settings>
+  <!-- 分辨率配置 -->
+  <Resolution>
+    <!-- 屏幕宽度 -->
+    <Width>3840</Width>
+    <!-- 屏幕高度 -->
+    <Height>2160</Height>
+  </Resolution>
+
+  <!-- 其他配置 -->
+  <OtherConfig>
+    <drug_speed>40</drug_speed> <!-- 药剂恢复速率修正 -->
+    <!-- 假设 drug_speed 为 40 -->
+    <drug_time>45</drug_time>  <!-- 药剂效果时间修正 -->
+  </OtherConfig>
+</Settings>

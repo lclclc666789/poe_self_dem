@@ -1,75 +1,33 @@
 ﻿using System;
-using System.Diagnostics;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
-using System.IO;
-using System.Text.RegularExpressions;
-using System.Threading;
-using System.Windows;
-using Tesseract;
-using System.Windows.Shapes;
 using System.Collections.Generic;
-using System.Linq;
-using System.Windows.Controls;
-using System.Windows.Media;
+using System.Diagnostics;
+using System.IO;
+using System.Security.Principal;
+using System.Threading;
+using System.Threading.Tasks;
+using System.Windows;
+using System.Xml.Linq;
+using AutoHotkey.Interop;
+using System.Runtime.InteropServices;
+using OpenCvSharp;
+using System.Drawing.Imaging;
+using System.Drawing;
+
 namespace WpfApp1
 {
-    public class MeanFilter
+    public partial class MainWindow : System.Windows.Window
     {
-        private const int BufferSize = 128;
-        private const int TrimSize = 16;
-        private readonly List<double> values = new List<double>();
-
-        public double Update(double newValue)
-        {
-            // 添加新值
-            values.Add(newValue);
-
-            // 如果超过了缓冲区大小，删除最旧的值
-            if (values.Count > BufferSize)
-            {
-                values.RemoveAt(0);
-            }
-
-            // 获取所有值并排序
-            var sortedValues = values.OrderBy(x => x).ToList();
-
-            // 如果值数量不足128，直接排序取中间值返回
-            if (values.Count < BufferSize)
-            {
-                return sortedValues[sortedValues.Count / 2];
-            }
-
-            // 否则，去掉最大的16个和最小的16个值，然后计算平均值
-            var trimmedValues = sortedValues.Skip(TrimSize).Take(BufferSize - 2 * TrimSize).ToList();
-            return trimmedValues.Average();
-        }
-    }
-
-    public partial class MainWindow : Window
-    {
-        private Thread ocrThread;
-        private Thread lifeThread;
-        private Thread manaThread;
         private bool isRunning = true;
-        private bool isKeepLife = false;
-        private bool isKeepmage = false;
-        private double lifePercentage;
-        private double shieldPercentage;
-        private double magePercentage;
-        private double spiritPercentage;
-        private double totalLife = 0;
-
         private readonly Random random = new Random();
-        private CancellationTokenSource Shiel_cancellationTokenSource;
+        private CancellationTokenSource _shieldCancellationTokenSource;
+        private CancellationTokenSource _qiyuanCancellationTokenSource;
+        private CancellationTokenSource _autoPickupCancellationTokenSource;
+        private bool _isAutoPickupRunning = false;
 
+        // 初始化 AutoHotkey 引擎
+        AutoHotkeyEngine ahk = AutoHotkeyEngine.Instance;
 
-        private CancellationTokenSource qiyuan_cancellationTokenSource;
-        private CancellationTokenSource Skillloops_cancellationTokenSource;
-        
-
-        // 定义一个只读字段，保存 16 组坐标
+        // 原始分辨率（3840x2160）的坐标
         private static readonly List<Tuple<int, int>> coordinates = new List<Tuple<int, int>>
         {
             Tuple.Create(350, 2115),
@@ -84,202 +42,144 @@ namespace WpfApp1
             Tuple.Create(268, 1750)
         };
 
+        // 当前分辨率
+        private int currentWidth = 3840;
+        private int currentHeight = 2160;
+
+        // drug_speed 配置
+        private int drugSpeed = 0;
+        private int drugTime = 0;
 
         public MainWindow()
         {
             InitializeComponent();
-          //  StartOCRThread();  // 启动 OCR 线程
-           // StartLifeThread();  // 启动生命值监控线程
-          //  StartManaThread();  // 启动魔力值监控线程
+
+            // 检测管理员权限
+            if (!IsRunningAsAdmin())
+            {
+                MessageBox.Show("请以管理员权限运行此程序！", "权限不足", MessageBoxButton.OK, MessageBoxImage.Warning);
+                Application.Current.Shutdown(); // 关闭程序
+                return;
+            }
+
+            LoadSettingsFromXml(); // 初始化时读取配置
         }
 
+        // 检测是否以管理员权限运行
+        private bool IsRunningAsAdmin()
+        {
+            WindowsIdentity identity = WindowsIdentity.GetCurrent();
+            WindowsPrincipal principal = new WindowsPrincipal(identity);
+            return principal.IsInRole(WindowsBuiltInRole.Administrator);
+        }
+
+        private void LoadSettingsFromXml()
+        {
+            try
+            {
+                // 读取 XML 文件
+                string xmlPath = "Settings.xml";
+                if (File.Exists(xmlPath))
+                {
+                    var doc = XDocument.Load(xmlPath);
+                    var resolution = doc.Element("Settings")?.Element("Resolution");
+                    if (resolution != null)
+                    {
+                        currentWidth = int.Parse(resolution.Element("Width")?.Value ?? "3840");
+                        currentHeight = int.Parse(resolution.Element("Height")?.Value ?? "2160");
+                    }
+
+                    // 读取 drug_speed
+                    var otherConfig = doc.Element("Settings")?.Element("OtherConfig");
+                    if (otherConfig != null)
+                    {
+                        drugSpeed = int.Parse(otherConfig.Element("drug_speed")?.Value ?? "0");
+                        drugTime = int.Parse(otherConfig.Element("drug_time")?.Value ?? "0");
+                    }
+                }
+                else
+                {
+                    // 如果文件不存在，使用默认值
+                    currentWidth = 3840;
+                    currentHeight = 2160;
+                    drugSpeed = 0;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"读取配置失败: {ex.Message}");
+                // 使用默认值
+                currentWidth = 3840;
+                currentHeight = 2160;
+                drugSpeed = 0;
+            }
+        }
+
+ 
+
+        private Tuple<int, int> MapCoordinates(int originalX, int originalY)
+        {
+            double scaleX = currentWidth / 3840.0;
+            double scaleY = currentHeight / 2160.0;
+
+            int mappedX = (int)(originalX * scaleX);
+            int mappedY = (int)(originalY * scaleY);
+
+            return Tuple.Create(mappedX, mappedY);
+        }
 
         private void ShielCheckBox_Checked(object sender, RoutedEventArgs e)
         {
-            // 当 CheckBox 被选中时执行的代码
-            // MessageBox.Show("CheckBox 被选中");
-            // 比如可以启用 Slider
-            // ValueSlider.IsEnabled = true; // 启用 Slider
-
-            // 创建一个 CancellationTokenSource
-            Shiel_cancellationTokenSource = new CancellationTokenSource();
-            var token = Shiel_cancellationTokenSource.Token;
-
-            // 启动一个 Task 来运行护盾 Keep 线程
+            _shieldCancellationTokenSource = new CancellationTokenSource();
+            var token = _shieldCancellationTokenSource.Token;
             Task.Run(() => ShieldKeep(token));
-
         }
+
         private void ShielCheckBox_Unchecked(object sender, RoutedEventArgs e)
         {
-            // 当 CheckBox 被取消选中时执行的代码
-            //MessageBox.Show("CheckBox 被取消选中");
-            // 比如可以禁用 Slider
-            //  ValueSlider.IsEnabled = false; // 禁用 Slider
-
-            Shiel_cancellationTokenSource?.Cancel();
+            _shieldCancellationTokenSource?.Cancel();
         }
-
-
 
         private void qiyuanCheckBox_Checked(object sender, RoutedEventArgs e)
         {
-            // 当 CheckBox 被选中时执行的代码
-            // MessageBox.Show("CheckBox 被选中");
-            // 比如可以启用 Slider
-            // ValueSlider.IsEnabled = true; // 启用 Slider
-
-            // 创建一个 CancellationTokenSource
-            qiyuan_cancellationTokenSource = new CancellationTokenSource();
-            var token = qiyuan_cancellationTokenSource.Token;
-
-            // 启动一个 Task 来运行护盾 Keep 线程
+            _qiyuanCancellationTokenSource = new CancellationTokenSource();
+            var token = _qiyuanCancellationTokenSource.Token;
             Task.Run(() => qiyuanKeep(token));
-
         }
-
 
         private void qiyuanCheckBox_Unchecked(object sender, RoutedEventArgs e)
         {
-            // 当 CheckBox 被取消选中时执行的代码
-            //MessageBox.Show("CheckBox 被取消选中");
-            // 比如可以禁用 Slider
-            //  ValueSlider.IsEnabled = false; // 禁用 Slider
-
-            qiyuan_cancellationTokenSource?.Cancel();
-        }
-
-
-
-
-
-        private void Skillloops_Checked(object sender, RoutedEventArgs e)
-        {
-            // 当 CheckBox 被选中时执行的代码
-            // MessageBox.Show("CheckBox 被选中");
-            // 比如可以启用 Slider
-            // ValueSlider.IsEnabled = true; // 启用 Slider
-          //  Thread.Sleep(5000);
-            // 创建一个 CancellationTokenSource
-            Skillloops_cancellationTokenSource = new CancellationTokenSource();
-            var token = Skillloops_cancellationTokenSource.Token;
-
-            // 启动一个 Task 来运行护盾 Keep 线程
-            Task.Run(() => Skillloops(token));
-
-        }
-
-
-        private void Skillloops_Unchecked(object sender, RoutedEventArgs e)
-        {
-            // 当 CheckBox 被取消选中时执行的代码
-            //MessageBox.Show("CheckBox 被取消选中");
-            // 比如可以禁用 Slider
-            //  ValueSlider.IsEnabled = false; // 禁用 Slider
-
-            Skillloops_cancellationTokenSource?.Cancel();
+            _qiyuanCancellationTokenSource?.Cancel();
         }
 
         private static DateTime qiyuan_time = DateTime.MinValue;
+
         private void ShieldKeep(CancellationToken token)
         {
             try
             {
                 while (true)
                 {
-                    // 检查是否被取消
                     token.ThrowIfCancellationRequested();
 
-                    // 在这里执行任务，比如模拟护盾的工作
-                    Console.WriteLine("护盾正在运行...");
-
-                    // 在 Dispatcher 上读取 Slider 的值
-                    int index = (int)Dispatcher.Invoke(() => ShielLevel.Value);
-
-
-
-
-
-                    // 确保不超出 coordinates 的范围
-                    if (index >= 0 && index < coordinates.Count)
+                    // int index = (int)Dispatcher.Invoke(() => ShielLevel.Value);
+                    int index = 9;
+                    int delay = (int)(3000 * (1 + drugTime / 100.0) / (1 + drugSpeed / 100.0)); // 动态计算延迟
+                    delay = ((delay / 100)-1) * 100;  // poe2 有取整计算
+                    Trace.WriteLine($"delay {delay}");
+                    // ShieldKeep 使用独立的逻辑
+                    if (CheckColorAndTriggerForShield(index, 0x31, delay))
                     {
-                        var coord = coordinates[index];
-
-                        int color = GetColorAt(coord.Item1, coord.Item2);
-                        if (color <0x80) {
-
-                            KeyboardSimulator.SimulateKeyPress(0x31);
-                           // Trace.WriteLine($"At ({coord.Item1}, {coord.Item2}), Color: {color:X}");
-                           Thread.Sleep(1800); // 暂停 1 秒
-                        }
-                        
+                        Thread.Sleep(5);
                     }
-
-                    // 模拟一些工作
-                    Thread.Sleep(50); // 暂停 1 秒
+                    Thread.Sleep(5);
                 }
             }
             catch (OperationCanceledException)
             {
-                // 捕获取消请求
-                Console.WriteLine("护盾已停止。");
+                Trace.WriteLine("护盾已停止。");
             }
         }
-
-    
-        private void Skillloops(CancellationToken token)
-        {
-            //try
-            //{
-            //    while (true)
-            //    {
-            //        // 检查是否被取消
-            //        token.ThrowIfCancellationRequested();
-
-            //        int delay = 1000; // 默认值
-            //        Application.Current.Dispatcher.Invoke(() =>
-            //        {
-            //            if (!int.TryParse(skillloopsDelay.Text, out delay))
-            //            {
-            //                delay = 1000; // 如果转换失败，使用默认值 1000
-            //            }
-            //        });
-
-            //        // 计算当前时间与 qiyuan_time 的差值（毫秒）
-            //        double timeDiff = (DateTime.Now - qiyuan_time).TotalMilliseconds;
-
-            //        // 如果差值大于设定的延迟值，则发送 E 键
-            //       var life = GetColorAt(240, 1970);
-            //       // Trace.WriteLine($"life : {life}");
-            //        if (life != 53) { 
-            //            continue;
-            //        }
-
-
-            //        var life_drg = GetColorAt(507, 2080);
-            //        Trace.WriteLine($"life_drg : {life_drg}");
-            //        if (life != 53)
-            //        {
-            //            continue;
-            //        }
-
-            //        if (timeDiff > delay)
-            //        {
-            //           KeyboardSimulator.SimulateKeyPress(0x45); // 'E' 键的虚拟键码
-            //            Thread.Sleep(500);
-            //        }
-            //        // 延迟指定的毫秒数
-            //        Thread.Sleep(100);
-
-                  
-            //    }
-            //}
-            //catch (OperationCanceledException)
-            //{
-            //    // 捕获取消请求
-            //    Console.WriteLine("护盾已停止。");
-            //}
-        }
-
 
         private void qiyuanKeep(CancellationToken token)
         {
@@ -287,79 +187,114 @@ namespace WpfApp1
             {
                 while (true)
                 {
-                    // 检查是否被取消
                     token.ThrowIfCancellationRequested();
 
+                    int index = (int)Dispatcher.Invoke(() => qiyuan_level.Value);
 
-
-                    // 在 Dispatcher 上读取 Slider 的值
-                   
-                       //     KeyboardSimulator.SimulateKeyPress(0x31);
-                    Bitmap screenshot = SaveScreenRegion(2972, 2048, 3016, 2083);
-                    var skill_lum = GetLuam(screenshot);
-
-                    //var life = GetColorAt(240, 1970);
-                    ////Trace.WriteLine($"life : {life}");
-                    //if ((life != 47)&&(life != 94))
-                    //{
-                    //    continue;
-                    //}
-
-
-                    var life_drg = GetColorAt(507, 2100);
-                   // Trace.WriteLine($"life_drg : {life_drg}");
-                    if (life_drg < 31)
+                    // qiyuanKeep 使用独立的逻辑
+                    if (CheckColorAndTriggerForQiyuan(index, 0x57, 50))
                     {
-                       // continue;
+                        qiyuan_time = DateTime.Now;
                     }
-
-                    int delay = 1000; // 默认值
-                    Application.Current.Dispatcher.Invoke(() =>
-                    {
-                        if (!int.TryParse(skillloopsDelay.Text, out delay))
-                        {
-                            delay = 1000; // 如果转换失败，使用默认值 1000
-                        }
-                    });
-
-
-
-
-                    // 计算当前时间与 qiyuan_time 的差值（毫秒）
-                    double timeDiff = (DateTime.Now - qiyuan_time).TotalMilliseconds;
-
-                    //if ((timeDiff > delay*1.5))
-                    //{
-                    //    KeyboardSimulator.SimulateKeyPress(0x45); // E 键的虚拟键码
-                    //    qiyuan_time = DateTime.Now; // 记录当前时间 
-                    //}
-
-                    // 在 Dispatcher 上读取 Slider 的值
-                    int index = (int)Dispatcher.Invoke(() => ShielLevel.Value);
-                    var coord = coordinates[index];
-
-                    int color = GetColorAt(coord.Item1, coord.Item2);
-
-                    //  if ((skill_lum > 130)&&(timeDiff > delay))
-                    if ((skill_lum > 130) && (color>0x80))
-                    {
-                        KeyboardSimulator.SimulateKeyPress(0x57); // W 键的虚拟键码
-                        qiyuan_time = DateTime.Now; // 记录当前时间 
-                        Thread.Sleep(50);
-                    }
-                    Thread.Sleep(5); 
                 }
             }
             catch (OperationCanceledException)
             {
-                // 捕获取消请求
-                Console.WriteLine("护盾已停止。");
+                Trace.WriteLine("qiyuanKeep 已停止。");
             }
         }
-        // P/Invoke to call GetPixel
+
+        private bool CheckColorAndTriggerForShield(int index, ushort keyCode, int delay)
+        {
+            // 获取颜色值
+            var coloxxr = GetColoAt(89, 1966);
+            int r = (coloxxr >> 16) & 0xFF;
+            int g = (coloxxr >> 8) & 0xFF;
+            int b = coloxxr & 0xFF;
+
+            // 目标颜色
+            int targetR = 36;
+            int targetG = 37;
+            int targetB = 37;
+
+            // 计算颜色距离
+            double distance = Math.Sqrt(Math.Pow(r - targetR, 2) + Math.Pow(g - targetG, 2) + Math.Pow(b - targetB, 2));
+
+            // 如果颜色距离大于阈值，跳过本次循环
+            if (distance > 3)
+            {
+                Thread.Sleep(500);
+                return false;
+            }
+
+            // 确保 index 在 coordinates 的范围内
+            if (index >= 0 && index < coordinates.Count)
+            {
+                var originalCoord = coordinates[index];
+                var mappedCoord = MapCoordinates(originalCoord.Item1, originalCoord.Item2);
+
+                // 获取灰度值
+                int color = GetGrayAt(mappedCoord.Item1, mappedCoord.Item2);
+               // Trace.WriteLine($"color {color}");
+                // ShieldKeep 不需要检测 skill_lum
+                if (color < 0x80)
+                {
+                    ahk.ExecRaw("Send, {1}"); // 按下 1 键
+                    Thread.Sleep(delay);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private bool CheckColorAndTriggerForQiyuan(int index, ushort keyCode, int delay)
+        {
+            // 获取颜色值
+            var coloxxr = GetColoAt(89, 1966);
+            int r = (coloxxr >> 16) & 0xFF;
+            int g = (coloxxr >> 8) & 0xFF;
+            int b = coloxxr & 0xFF;
+
+            // 目标颜色
+            int targetR = 36;
+            int targetG = 37;
+            int targetB = 37;
+
+            // 计算颜色距离
+            double distance = Math.Sqrt(Math.Pow(r - targetR, 2) + Math.Pow(g - targetG, 2) + Math.Pow(b - targetB, 2));
+
+            // 如果颜色距离大于阈值，跳过本次循环
+            if (distance > 3)
+            {
+                Thread.Sleep(500);
+                return false;
+            }
+
+            // 确保 index 在 coordinates 的范围内
+            if (index >= 0 && index < coordinates.Count)
+            {
+                var originalCoord = coordinates[index];
+                var mappedCoord = MapCoordinates(originalCoord.Item1, originalCoord.Item2);
+
+                // 获取灰度值
+                int color = GetGrayAt(mappedCoord.Item1, mappedCoord.Item2);
+                var skill_lum = GetGrayAt(2972, 2048);
+
+                // qiyuanKeep 需要检测 skill_lum
+                if ((skill_lum > 75) && (color > 0x80))
+                {
+                    ahk.ExecRaw("Send, {w}"); // 按下 W 键
+                    Thread.Sleep(delay);
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         [DllImport("user32.dll")]
         private static extern IntPtr GetDC(IntPtr hWnd);
-
 
         [DllImport("gdi32.dll")]
         private static extern uint GetPixel(IntPtr hdc, int nXPos, int nYPos);
@@ -367,318 +302,38 @@ namespace WpfApp1
         [DllImport("user32.dll")]
         private static extern void ReleaseDC(IntPtr hWnd, IntPtr hdc);
 
-        private int GetColorAt(int x, int y)
+        private int GetGrayAt(int originalX, int originalY)
         {
+            // 在函数内部进行坐标映射
+            var mappedCoord = MapCoordinates(originalX, originalY);
+            int x = mappedCoord.Item1;
+            int y = mappedCoord.Item2;
+
             IntPtr desk = GetDesktopWindow();
             IntPtr dc = GetWindowDC(desk);
             int pixelColor = (int)GetPixel(dc, x, y);
             ReleaseDC(desk, dc);
-            // 提取 RGB 组件
-            int r = (pixelColor & 0x00FF0000) >> 16; // 红色组件
-            int g = (pixelColor & 0x0000FF00) >> 8;  // 绿色组件
-            int b = (pixelColor & 0x000000FF);       // 蓝色组件
 
-            // 计算灰度值
+            int r = (pixelColor & 0x00FF0000) >> 16;
+            int g = (pixelColor & 0x0000FF00) >> 8;
+            int b = (pixelColor & 0x000000FF);
+
             int gray = (int)(0.299 * r + 0.587 * g + 0.114 * b);
             return gray;
         }
-        //private void Button_Click(object sender, RoutedEventArgs e)
-        //{
-        //    isKeepLife = !isKeepLife;
-        //    life.Content = isKeepLife ? "Stop" : "Start";
-        //    Trace.WriteLine($"isKeepLife: {isKeepLife}");
-        //}
 
-        //private void Button_Click_1(object sender, RoutedEventArgs e)
-        //{
-        //    isKeepmage = !isKeepmage;
-        //    mage.Content = isKeepmage ? "Stop" : "Start";
-        //}
-
-        private void StartOCRThread()
+        private int GetColoAt(int originalX, int originalY)
         {
-            ocrThread = new Thread(() =>
-            {
-                while (isRunning)
-                {
-                    try
-                    {
-                        UpdateLifeAndShield();
-                        UpdateMageAndSpirit();
-                        Thread.Sleep(10);
-                    }
-                    catch (Exception ex)
-                    {
-                        Trace.WriteLine($"Error: {ex.Message}");
-                    }
-                }
-            });
+            // 在函数内部进行坐标映射
+            var mappedCoord = MapCoordinates(originalX, originalY);
+            int x = mappedCoord.Item1;
+            int y = mappedCoord.Item2;
 
-            ocrThread.IsBackground = true;
-            ocrThread.Start();
-            Trace.WriteLine("OCR thread started.");
-        }
-
-        private void UpdateLifeAndShield()
-        {
-            Bitmap screenshot = SaveScreenRegion(200, 1630, 425, 1720);
-            string ocrResult = PerformOCR(screenshot);
-            ocrResult = ocrResult.Replace(",", "");
-            string[] lines = ocrResult.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            var filter1 = new MeanFilter();
-            if (lines.Length >= 2)
-            {
-                string[] lifeParts = lines[0].Split('/');
-                if (lifeParts.Length == 2)
-                {
-                    double currentLife = double.Parse(lifeParts[0]);
-                    double recognizedTotalLife = double.Parse(lifeParts[1]);
-
-                    double filteredTotalLife = filter1.Update(recognizedTotalLife);
-                  //  Trace.WriteLine($"OCR life  {filteredTotalLife} recognizedTotalLife {recognizedTotalLife}.");
-                    if (Math.Abs(filteredTotalLife - recognizedTotalLife) > 50)
-                    {
-                        Trace.WriteLine($"OCR life  {filteredTotalLife} recognizedTotalLife {recognizedTotalLife}.");
-                        return;
-                    }
-
-                    totalLife = filteredTotalLife;
-                    lifePercentage = currentLife / totalLife;
-                }
-
-                shieldPercentage = ParseLineToPercentage(lines[1]);
-            }
-        }
-
-        private void UpdateMageAndSpirit()
-        {
-            Bitmap screenshot = SaveScreenRegion(3535, 1500, 3731, 1720);
-            string ocrResult = PerformOCR(screenshot);
-            string[] lines2 = ocrResult.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            var filter1 = new MeanFilter();
-            if (lines2.Length >= 2)
-            {
-
-
-
-                string[] lifeParts = lines2[0].Split('/');
-                if (lifeParts.Length == 2)
-                {
-                    double currentMana= double.Parse(lifeParts[0]);
-                    double recognizedTotaMana= double.Parse(lifeParts[1]);
-
-                    double filteredTotalMana = filter1.Update(recognizedTotaMana);
-                    //  Trace.WriteLine($"OCR life  {filteredTotalLife} recognizedTotalLife {recognizedTotalLife}.");
-                    if (Math.Abs(filteredTotalMana - recognizedTotaMana) > 50)
-                    {
-                        Trace.WriteLine($"OCR mana  {recognizedTotaMana} fillter  {filteredTotalMana}.");
-                        return;
-                    }
-
-
-                }
-
-                magePercentage = ParseLineToPercentage(lines2[0]);
-                spiritPercentage = ParseLineToPercentage(lines2[1]);
-
-
-
-            }
-        }
-
-        private void StartLifeThread()
-        {
-            lifeThread = new Thread(() =>
-            {
-                double lastLifePercentage = 0;
-                DateTime lastOutputTime = DateTime.MinValue;
-                while (isRunning)
-                {
-                    try
-                    {
-                        Thread.Sleep(100 + random.Next(0, 50));
-
-                        double currentLifePercentage = lifePercentage;
-                        TimeSpan timeSinceLastOutput = DateTime.Now - lastOutputTime;
-
-                        if (Math.Abs(currentLifePercentage - lastLifePercentage) < double.Epsilon)
-                        {
-                            continue;
-                        }
-
-                        if (Math.Abs(currentLifePercentage - lastLifePercentage) > double.Epsilon || timeSinceLastOutput.TotalSeconds >= 5)
-                        {
-                            lastOutputTime = DateTime.Now;
-                            lastLifePercentage = currentLifePercentage;
-                        }
-
-                        double keepLine = 0.9;
-                        if (currentLifePercentage > keepLine || currentLifePercentage < 0.02 || !isKeepLife)
-                        {
-                            continue;
-                        }
-
-                        currentLifePercentage = keepLine - currentLifePercentage;
-                        currentLifePercentage = currentLifePercentage * 1.5;
-
-                        if (lifePercentage < 0.65)
-                        {
-                            KeyboardSimulator.SimulateKeyPress(0x31);
-                            Thread.Sleep(random.Next(3000, 4000));
-                            Trace.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] , life {lifePercentage} key 1 pressed with probability {currentLifePercentage}");
-                            continue;
-                        }
-                        
-                        //if (random.NextDouble() < currentLifePercentage)
-                        //{
-                        //    KeyboardSimulator.SimulateKeyPress(0x31);
-                        //    Thread.Sleep(random.Next(3000, 400));
-                        //    Trace.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] , life {currentLifePercentage} key 1 pressed with probability {currentLifePercentage}");
-                        //}
-                    }
-                    catch (Exception ex)
-                    {
-                        Trace.WriteLine($"Error: {ex.Message}");
-                    }
-                }
-            });
-
-            lifeThread.IsBackground = true;
-            lifeThread.Start();
-            Trace.WriteLine("Life monitoring thread started.");
-        }
-
-        private void StartManaThread()
-        {
-            manaThread = new Thread(() =>
-            {
-                double lastMagePercentage = 0;
-                DateTime lastOutputTime = DateTime.MinValue;
-                while (isRunning)
-                {
-                    try
-                    {
-                        double currentMagePercentage = magePercentage;
-                        Thread.Sleep(random.Next(500, 700));
-                        TimeSpan timeSinceLastOutput = DateTime.Now - lastOutputTime;
-
-                        if (Math.Abs(currentMagePercentage - lastMagePercentage) < double.Epsilon)
-                        {
-                            continue;
-                        }
-
-                        if (timeSinceLastOutput.TotalSeconds >= 5)
-                        {
-                            lastOutputTime = DateTime.Now;
-                            lastMagePercentage = currentMagePercentage;
-                        }
-
-                        if (!isKeepmage || currentMagePercentage < 0.05)
-                        {
-                            continue;
-                        }
-
-                        if (currentMagePercentage < 0.2)
-                        {
-                            KeyboardSimulator.SimulateKeyPress(0x32);
-                            Trace.WriteLine($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] , mana {currentMagePercentage}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Trace.WriteLine($"Error: {ex.Message}");
-                    }
-                }
-            });
-
-            manaThread.IsBackground = true;
-            manaThread.Start();
-            Trace.WriteLine("Mana monitoring thread started.");
-        }
-
-        private double ParseLineToPercentage(string line)
-        {
-            string cleanedLine = Regex.Replace(line, @"[^\d/]", "");
-            string[] parts = cleanedLine.Split('/');
-            if (parts.Length == 2 && double.TryParse(parts[0], out double currentValue) && double.TryParse(parts[1], out double totalValue) && totalValue != 0)
-            {
-                return currentValue / totalValue;
-            }
-            return 0.0;
-        }
-
-        private Bitmap SaveScreenRegion(int x1, int y1, int x2, int y2)
-        {
-            int screenWidth = GetSystemMetrics(0);
-            int screenHeight = GetSystemMetrics(1);
-
-            int targetWidth = 3840;
-            int targetHeight = 2160;
-
-            double scaleX = (double)screenWidth / targetWidth;
-            double scaleY = (double)screenHeight / targetHeight;
-
-            int scaledX1 = (int)(x1 * scaleX);
-            int scaledY1 = (int)(y1 * scaleY);
-            int scaledX2 = (int)(x2 * scaleX);
-            int scaledY2 = (int)(y2 * scaleY);
-
-            int width = scaledX2 - scaledX1;
-            int height = scaledY2 - scaledY1;
-
-            Bitmap bitmap = new Bitmap(width, height);
-
-            using (Graphics g = Graphics.FromImage(bitmap))
-            {
-                IntPtr hdcDestination = g.GetHdc();
-                IntPtr hdcSource = GetWindowDC(GetDesktopWindow());
-                BitBlt(hdcDestination, 0, 0, width, height, hdcSource, scaledX1, scaledY1, CopyPixelOperation.SourceCopy);
-                ReleaseDC(GetDesktopWindow(), hdcSource);
-                g.ReleaseHdc(hdcDestination);
-            }
-
-            //bitmap.Save("filePath.png", System.Drawing.Imaging.ImageFormat.Png);
-            return bitmap;
-        }
-
-        public string PerformOCR(Bitmap image)
-        {
-            using var engine = new TesseractEngine(@"./tessdata", "eng", EngineMode.Default);
-            engine.SetVariable("tessedit_pageseg_mode", "6");
-            engine.SetVariable("tessedit_char_whitelist", "0123456789/,");
-
-            using var memoryStream = new MemoryStream();
-            image.Save(memoryStream, System.Drawing.Imaging.ImageFormat.Bmp);
-            memoryStream.Position = 0;
-
-            using var img = Pix.LoadFromMemory(memoryStream.ToArray());
-            using var page = engine.Process(img);
-
-            return page.GetText();
-        }
-
-        public int GetLuam(Bitmap image)
-        {
-
-            int width = image.Width;
-            int height = image.Height;
-            long totalGray = 0;
-            int pixelCount = width * height;
-
-            for (int y = 0; y < height; y++)
-            {
-                for (int x = 0; x < width; x++)
-                {
-                    var pixelColor = image.GetPixel(x, y);
-                    // 使用加权平均法计算灰度值
-                    int grayValue = (int)(0.3 * pixelColor.R + 0.59 * pixelColor.G + 0.11 * pixelColor.B);
-                    totalGray += grayValue;
-                }
-            }
-
-            // 计算平均灰度值
-            int averageGray = (int)(totalGray / pixelCount);
-            return averageGray; // 返回平均灰度值
+            IntPtr desk = GetDesktopWindow();
+            IntPtr dc = GetWindowDC(desk);
+            int pixelColor = (int)GetPixel(dc, x, y);
+            ReleaseDC(desk, dc);
+            return pixelColor;
         }
 
         [DllImport("user32.dll")]
@@ -687,115 +342,255 @@ namespace WpfApp1
         [DllImport("user32.dll")]
         private static extern IntPtr GetWindowDC(IntPtr hWnd);
 
-        [DllImport("gdi32.dll")]
-        private static extern bool BitBlt(IntPtr hObject, int nXDest, int nYDest, int nWidth, int nHeight,
-            IntPtr hObjectSource, int nXSrc, int nYSrc, CopyPixelOperation SourceCopy);
-
-
-
-        [DllImport("user32.dll")]
-        private static extern int GetSystemMetrics(int nIndex);
-
-        private double LifePercentage
-        {
-            get { return lifePercentage; }
-            set { lifePercentage = value; }
-        }
-
-        private double ShieldPercentage
-        {
-            get { return shieldPercentage; }
-            set { shieldPercentage = value; }
-        }
-
-        private double MagePercentage
-        {
-            get { return magePercentage; }
-            set { magePercentage = value; }
-        }
-
-        private double SpiritPercentage
-        {
-            get { return spiritPercentage; }
-            set { spiritPercentage = value; }
-        }
-
         private void Window_Closed(object sender, EventArgs e)
         {
             isRunning = false;
         }
 
-        private void MyCheckBoxskillSqen_Checked(object sender, RoutedEventArgs e)
+        private void autoPickup_Checked(object sender, RoutedEventArgs e)
         {
+            if (_isAutoPickupRunning) return;
 
-        }
-    }
+            _isAutoPickupRunning = true;
+            _autoPickupCancellationTokenSource = new CancellationTokenSource();
 
-    public static class KeyboardSimulator
-    {
-        [StructLayout(LayoutKind.Sequential)]
-        private struct INPUT
-        {
-            public int type;
-            public InputUnion u;
+            // 启动检测线程
+            Task.Run(() => DetectWhiteRectangleWithRedText(_autoPickupCancellationTokenSource.Token), _autoPickupCancellationTokenSource.Token);
         }
 
-        [StructLayout(LayoutKind.Explicit)]
-        private struct InputUnion
+        private void autoPickup_Unchecked(object sender, RoutedEventArgs e)
         {
-            [FieldOffset(0)] public MOUSEINPUT mi;
-            [FieldOffset(0)] public KEYBDINPUT ki;
-            [FieldOffset(0)] public HARDWAREINPUT hi;
+            if (!_isAutoPickupRunning) return;
+
+            _isAutoPickupRunning = false;
+            _autoPickupCancellationTokenSource?.Cancel();
+        }
+        private Point2f? _lastCenter = null; // 记录上一次的 center 值
+        // 检测逻辑
+        private void DetectWhiteRectangleWithRedText(CancellationToken token)
+        {
+            while (_isAutoPickupRunning && !token.IsCancellationRequested)
+            {
+                try
+                {
+                    // 抓取屏幕
+                    Mat screenCapture = CaptureScreen();
+
+
+                    var coloxxr = GetColoAt(89, 1966);
+                    int r = (coloxxr >> 16) & 0xFF;
+                    int g = (coloxxr >> 8) & 0xFF;
+                    int b = coloxxr & 0xFF;
+
+                    // 目标颜色
+                    int targetR = 36;
+                    int targetG = 37;
+                    int targetB = 37;
+
+                    // 计算颜色距离
+                    double distance = Math.Sqrt(Math.Pow(r - targetR, 2) + Math.Pow(g - targetG, 2) + Math.Pow(b - targetB, 2));
+
+                    // 如果颜色距离大于阈值，跳过本次循环
+                    if (distance > 3)
+                    {
+                        Thread.Sleep(500);
+                        continue;
+                    }
+
+
+                    //// 缩放到 800x600
+                    //Mat resizedImage = new Mat();
+                    //Cv2.Resize(screenCapture, resizedImage, new OpenCvSharp.Size(800, 600));
+
+                    // 保存为 BMP 文件
+                    //  Cv2.ImWrite("resized_image.bmp", resizedImage);
+
+                    // 1. 检测白色矩形框
+                    Mat whiteMask = new Mat();
+                    Scalar lowerWhite = new Scalar(255, 255, 255); // RGB(255, 255, 255)
+                    Scalar upperWhite = new Scalar(255, 255, 255);
+                    Cv2.InRange(screenCapture, lowerWhite, upperWhite, whiteMask);
+
+                    var contours = Cv2.FindContoursAsArray(whiteMask, RetrievalModes.Tree, ContourApproximationModes.ApproxSimple);
+
+                    Point2f center = new Point2f();
+
+                    foreach (var contour in contours)
+                    {
+                        var boundingRect = Cv2.BoundingRect(contour);
+                        if((boundingRect.Width==1)|| (boundingRect.Height == 1)) {  continue; }
+
+                        if (boundingRect.Width * boundingRect.Height > 5000 * (3840.0 / currentWidth) * (2160.0 / currentHeight)) // 缩放后的面积阈值
+                        {
+                            center = new Point2f(boundingRect.X + boundingRect.Width / 2, boundingRect.Y + boundingRect.Height / 2);
+
+                            // 在 boundingRect 区域内检测红色文字
+                            Mat whiteRoi = new Mat(screenCapture, boundingRect); // 提取白色矩形框区域
+
+                            Scalar lowerRed = new Scalar(0, 0, 200); // 放宽红色阈值
+                            Scalar upperRed = new Scalar(50, 50, 255);
+                            Mat redMask = new Mat();
+                            Cv2.InRange(whiteRoi, lowerRed, upperRed, redMask);
+
+                            int redPixelCount = Cv2.CountNonZero(redMask);
+                            if (redPixelCount > 10) // 红色像素数量阈值
+                            {
+                                Trace.WriteLine($"检测到白色矩形框内存在红色文字！中心坐标: ({center.X}, {center.Y})");
+
+                                // 计算屏幕中心坐标
+                                Point2f screenCenter = new Point2f(currentWidth / 2, currentHeight / 2);
+
+                                // 计算 center 与屏幕中心的距离
+                                 distance = Math.Sqrt(Math.Pow(center.X - screenCenter.X, 2) + Math.Pow(center.Y - screenCenter.Y, 2));
+                                Trace.WriteLine($"检测到白色矩形框内存在红色文字！中心坐标: ({center.X}, {center.Y})   distance {distance}");
+                                // 如果距离小于阈值（例如 20），则模拟鼠标左键点击
+                                if (distance < 400 * (3840.0 / currentWidth) * (2160.0 / currentHeight))
+                                {
+                                    // 移动鼠标到 center 位置
+                                    ahk.ExecRaw($"Click, {center.X}, {center.Y}, Left");
+                                    Thread.Sleep(500 + random.Next(0, 20));
+                                    Trace.WriteLine($"模拟鼠标左键点击中心坐标: ({center.X}, {center.Y})");
+
+                                    // 如果当前 center 与上一次相同，则跳过
+                                    if (_lastCenter.HasValue && _lastCenter.Value == center)
+                                    {
+                                        Trace.WriteLine("检测到相同的 center，跳过本次操作。");
+                                        continue;
+                                    }
+
+                                    // 记录当前 center
+                                    _lastCenter = center;
+                                }
+
+                            }
+                            else
+                            {
+                                Trace.WriteLine("白色矩形框 【OK】内存在红色文字【NG】");
+                            }
+
+
+                          //  break;
+                        }
+                    }
+
+                 
+                }
+                catch (Exception ex)
+                {
+                    Trace.WriteLine($"发生错误: {ex.Message}");
+                }
+
+                // 1秒检测一次
+                Thread.Sleep(20 + random.Next(0, 30));
+            }
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct MOUSEINPUT
+        // 抓取屏幕
+        private Mat CaptureScreen()
         {
-            public int dx;
-            public int dy;
-            public int mouseData;
-            public uint dwFlags;
-            public uint time;
-            public IntPtr dwExtraInfo;
+            IntPtr hdcSrc = GetDC(IntPtr.Zero);
+            IntPtr hdcDest = CreateCompatibleDC(hdcSrc);
+            IntPtr hBitmap = CreateCompatibleBitmap(hdcSrc, currentWidth, currentHeight);
+            IntPtr hOld = SelectObject(hdcDest, hBitmap);
+            BitBlt(hdcDest, 0, 0, currentWidth, currentHeight, hdcSrc, 0, 0, TernaryRasterOperations.SRCCOPY);
+            SelectObject(hdcDest, hOld);
+            DeleteDC(hdcDest);
+            ReleaseDC(IntPtr.Zero, hdcSrc);
+
+            // 从 HBitmap 创建 Bitmap
+            var bitmap = System.Drawing.Image.FromHbitmap(hBitmap);
+            DeleteObject(hBitmap);
+
+            // 将 Bitmap 转换为 24 位 RGB 格式
+            var bitmap24bpp = ConvertTo24bpp(bitmap);
+
+            // 将 Bitmap 转换为 Mat
+            return BitmapToMat(bitmap);
+        }
+        // 将 Bitmap 转换为 24 位 RGB 格式
+        private Bitmap ConvertTo24bpp(Bitmap bitmap)
+        {
+            if (bitmap.PixelFormat == PixelFormat.Format24bppRgb)
+            {
+                return bitmap; // 已经是 24 位 RGB 格式，直接返回
+            }
+
+            // 创建一个新的 24 位 RGB 格式的 Bitmap
+            var bitmap24bpp = new Bitmap(bitmap.Width, bitmap.Height, PixelFormat.Format24bppRgb);
+
+            // 将原始 Bitmap 绘制到新的 Bitmap 上
+            using (var g = Graphics.FromImage(bitmap24bpp))
+            {
+                g.DrawImage(bitmap, 0, 0);
+            }
+
+            return bitmap24bpp;
+        }
+        private Mat BitmapToMat(Bitmap bitmap)
+        {
+            // 锁定 Bitmap 数据
+            var bitmapData = bitmap.LockBits(
+                new Rectangle(0, 0, bitmap.Width, bitmap.Height),
+                ImageLockMode.ReadOnly,
+                PixelFormat.Format24bppRgb
+            );
+
+            try
+            {
+                // 创建 Mat 对象
+                Mat mat = new Mat(bitmap.Height, bitmap.Width, MatType.CV_8UC3);
+
+                // 计算需要复制的字节数
+                int byteCount = bitmapData.Stride * bitmapData.Height;
+
+                // 使用 Buffer.MemoryCopy 复制数据
+                unsafe
+                {
+                    Buffer.MemoryCopy(
+                        (void*)bitmapData.Scan0, // 源指针
+                        (void*)mat.DataPointer,  // 目标指针
+                        byteCount,               // 目标缓冲区大小
+                        byteCount                // 要复制的字节数
+                    );
+                }
+
+                return mat;
+            }
+            finally
+            {
+                // 解锁 Bitmap 数据
+                bitmap.UnlockBits(bitmapData);
+            }
         }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct KEYBDINPUT
+
+
+        // GDI32 函数
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr CreateCompatibleBitmap(IntPtr hdc, int nWidth, int nHeight);
+
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr CreateCompatibleDC(IntPtr hdc);
+
+        [DllImport("gdi32.dll")]
+        private static extern IntPtr SelectObject(IntPtr hdc, IntPtr hgdiobj);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool BitBlt(IntPtr hdcDest, int nXDest, int nYDest, int nWidth, int nHeight, IntPtr hdcSrc, int nXSrc, int nYSrc, TernaryRasterOperations dwRop);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool DeleteDC(IntPtr hdc);
+
+        [DllImport("gdi32.dll")]
+        private static extern bool DeleteObject(IntPtr hObject);
+
+
+
+
+
+        private enum TernaryRasterOperations
         {
-            public ushort wVk;
-            public ushort wScan;
-            public uint dwFlags;
-            public uint time;
-            public IntPtr dwExtraInfo;
-        }
-
-        [StructLayout(LayoutKind.Sequential)]
-        private struct HARDWAREINPUT
-        {
-            public uint uMsg;
-            public ushort wParamL;
-            public ushort wParamH;
-        }
-
-        private const int INPUT_KEYBOARD = 1;
-        private const uint KEYEVENTF_KEYUP = 0x0002;
-
-        [DllImport("user32.dll")]
-        private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
-
-        public static void SimulateKeyPress(ushort keyCode)
-        {
-            INPUT[] inputs = new INPUT[2];
-
-            inputs[0].type = INPUT_KEYBOARD;
-            inputs[0].u.ki.wVk = keyCode;
-            inputs[0].u.ki.dwFlags = 0;
-
-            inputs[1].type = INPUT_KEYBOARD;
-            inputs[1].u.ki.wVk = keyCode;
-            inputs[1].u.ki.dwFlags = KEYEVENTF_KEYUP;
-
-            SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+            SRCCOPY = 0x00CC0020
         }
     }
 }

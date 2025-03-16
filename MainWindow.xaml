@@ -5,7 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:WpfApp1"
         mc:Ignorable="d"
-        Title="MainWindow" Height="110" Width="250">
+        Title="MainWindow" Height="210" Width="450">
     <Grid>
         <!-- CheckBox -->
         <CheckBox x:Name="MyCheckBox" 
@@ -18,7 +18,7 @@
                   Checked="ShielCheckBox_Checked" 
                   Unchecked="ShielCheckBox_Unchecked"/>
         <Slider Name="ShielLevel" HorizontalAlignment="Left" Margin="112,32,0,0" VerticalAlignment="Top" Width="100" Height="18"  Minimum="0" Maximum="9" Value="6" />
-        <CheckBox x:Name="MyCheckBox复制__C_" 
+        <CheckBox x:Name="qiyuan_box" 
             Content="祈愿-电球" 
             HorizontalAlignment="Left" 
             Height="18" 
@@ -27,7 +27,16 @@
             Width="83" 
             Checked="qiyuanCheckBox_Checked" 
             Unchecked="qiyuanCheckBox_Unchecked"/>
-        <TextBox  Name="skillloopsDelay" HorizontalAlignment="Left" Margin="115,67,0,0" TextWrapping="Wrap" Text="600" VerticalAlignment="Top" Width="94"/>
+        <Slider x:Name="qiyuan_level" HorizontalAlignment="Left" Margin="112,67,0,0" VerticalAlignment="Top" Width="100" Height="18"  Minimum="0" Maximum="9" Value="7" />
+        <CheckBox x:Name="autoPickup" 
+            Content="自动捡装备" 
+            HorizontalAlignment="Left" 
+            Height="18" 
+            Margin="24,97,0,0" 
+            VerticalAlignment="Top" 
+            Width="83" 
+            Checked="autoPickup_Checked" 
+            Unchecked="autoPickup_Unchecked"/>
 
     </Grid>
 </Window>

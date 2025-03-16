@@ -1,0 +1,20 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2011/08/nuspec.xsd">
+  <metadata>
+    <id>AutoHotkey.Interop</id>
+    <version>1.0.0.1</version>
+    <title>AutoHotkey.Interop</title>
+    <authors>Andrew Smith, Chris Kaiser</authors>
+    <license type="expression">GPL-2.0-only</license>
+    <licenseUrl>https://licenses.nuget.org/GPL-2.0-only</licenseUrl>
+    <icon>images\icon.png</icon>
+    <projectUrl>https://github.com/kaiser-chris/AutoHotkey.Interop</projectUrl>
+    <description>This project is a basic wrapper around HotKeyIt's AHKDLL (aka AutoHotkey_H) for .Net Projects.</description>
+    <releaseNotes>Updated AutoHotkey dlls and allowed version choosing</releaseNotes>
+    <copyright></copyright>
+    <tags>AutoHotkey Wrapper</tags>
+    <readme>docs\README.md</readme>
+    <repository type="git" url="https://github.com/kaiser-chris/AutoHotkey.Interop.git" />
+    <dependencies />
+  </metadata>
+</package>
