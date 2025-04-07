@@ -9,7 +9,7 @@
     <Grid>
         <!-- CheckBox -->
         <CheckBox x:Name="MyCheckBox" 
-                  Content="红药冲屏障" 
+                  Content="红药冲护盾" 
                   HorizontalAlignment="Left" 
                   Height="18" 
                   Margin="24,32,0,0" 
@@ -26,7 +26,50 @@
             Width="83" 
             Checked="qiyuanCheckBox_Checked" 
             Unchecked="qiyuanCheckBox_Unchecked"/>
-        <Slider x:Name="qiyuan_level" HorizontalAlignment="Left" Margin="112,67,0,0" VerticalAlignment="Top" Width="100" Height="18"  Minimum="0" Maximum="9" Value="7" />
+        <Slider x:Name="qiyuan_level" HorizontalAlignment="Left" Margin="112,67,0,0" VerticalAlignment="Top" Width="100" Height="18"  Minimum="0" Maximum="9" Value="8" />
+        <CheckBox x:Name="qiyuan_box复制__C_" 
+            Content="红药-生命" 
+            HorizontalAlignment="Left" 
+            Height="18" 
+            Margin="24,97,0,0" 
+            VerticalAlignment="Top" 
+            Width="83" 
+            Checked="life_keep_Checked" 
+            Unchecked="life_keep__Unchecked"/>
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="112,97,0,0">
+            <Slider x:Name="life_level_C" 
+            Width="100" 
+            Height="18" 
+            Minimum="1" 
+            Maximum="99" 
+            Value="80" />
+            <TextBlock x:Name="lifelevel" 
+               Margin="5,0,0,0" 
+               VerticalAlignment="Center" 
+               Text="{Binding Value, ElementName=life_level_C}" />
+        </StackPanel>
+        <CheckBox x:Name="qiyuan_box复制__C_复制__C_" 
+            Content="蓝药-能量" 
+            HorizontalAlignment="Left" 
+            Height="18" 
+            Margin="24,120,0,0" 
+            VerticalAlignment="Top" 
+            Width="83" 
+            Checked="mana_keep_Checked" 
+            Unchecked="mana_keep__Unchecked"/>
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="112,117,0,0">
+            <Slider x:Name="mana_level_C" 
+            Width="100" 
+            Height="18" 
+            Minimum="1" 
+            Maximum="99" 
+            Value="40" />
+            <TextBlock x:Name="qiyuan_level_ValueText" 
+               Margin="5,0,0,0" 
+               VerticalAlignment="Center" 
+               Text="{Binding Value, ElementName=mana_level_C}" />
+        </StackPanel>
 
     </Grid>
 </Window>

@@ -9,8 +9,13 @@
 
   <!-- 其他配置 -->
   <OtherConfig>
-    <drug_speed>40</drug_speed> <!-- 药剂恢复速率修正 -->
+    <drug_speed>69</drug_speed> <!-- 药剂恢复速率修正 -->
     <!-- 假设 drug_speed 为 40 -->
-    <drug_time>45</drug_time>  <!-- 药剂效果时间修正 -->
+    <drug_time>105</drug_time>  <!-- 药剂效果时间修正 -->
+    <w_Level>50</w_Level>     <!-- 技能w 的阈值 -->
+    <e_Level>50</e_Level>      <!-- 技能e 的阈值 -->
+    <hudun>140</hudun>          <!-- 技能e'w 的阈值 -->
+
+    <Signature>2368805</Signature>  <!-- 技能e'w 的阈值 -->
   </OtherConfig>
 </Settings>
